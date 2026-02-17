@@ -8,13 +8,30 @@ const openai = new OpenAI({
 
 export async function transcribeVideo(audioBuffer: Buffer, filename: string): Promise<WhisperResponse> {
     try {
-        // Ensure filename has .mp3 extension
-        const mp3Filename = filename.endsWith('.mp3') ? filename : `${filename}.mp3`;
+        // Ensure filename has an audio extension
+        let audioFilename = filename;
+        let mimeType = 'audio/mpeg';
 
-        console.log(`[Whisper] Transcribing file: ${mp3Filename} (${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+        // Detect format and set appropriate extension
+        if (!filename.match(/\.(mp3|mp4|mpeg|mpga|m4a|wav|webm|ogg)$/i)) {
+            audioFilename = `${filename}.mp3`;
+        }
+
+        // Set correct MIME type based on extension
+        if (audioFilename.endsWith('.webm')) {
+            mimeType = 'audio/webm';
+        } else if (audioFilename.endsWith('.m4a')) {
+            mimeType = 'audio/mp4';
+        } else if (audioFilename.endsWith('.wav')) {
+            mimeType = 'audio/wav';
+        } else if (audioFilename.endsWith('.ogg')) {
+            mimeType = 'audio/ogg';
+        }
+
+        console.log(`[Whisper] Transcribing file: ${audioFilename} (${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB, ${mimeType})`);
 
         // Create a File-like object from Buffer for OpenAI API
-        const file = new File([new Uint8Array(audioBuffer)], mp3Filename, { type: 'audio/mpeg' });
+        const file = new File([new Uint8Array(audioBuffer)], audioFilename, { type: mimeType });
 
         const response = await openai.audio.transcriptions.create({
             file: file,

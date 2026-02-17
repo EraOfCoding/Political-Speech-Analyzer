@@ -41,12 +41,20 @@ export async function getYouTubeInfo(url: string) {
     }
 
     if (IS_SERVERLESS) {
-        // Use ytdl-core for serverless environments
+        // Use @distube/ytdl-core for serverless environments (maintained fork)
         console.log('[ytdl-core] Fetching video info...');
-        const ytdl = (await import('ytdl-core')).default;
+        const ytdl = (await import('@distube/ytdl-core')).default;
 
         try {
-            const info = await ytdl.getInfo(normalizedUrl);
+            const info = await ytdl.getInfo(normalizedUrl, {
+                // Add headers to avoid being blocked
+                requestOptions: {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                    },
+                },
+            });
             const videoDetails = info.videoDetails;
 
             return {
@@ -113,9 +121,9 @@ export async function getYouTubeInfo(url: string) {
 }
 
 /**
- * Downloads audio from YouTube URL and returns as Buffer
+ * Downloads audio from YouTube URL and returns as Buffer with format info
  */
-export async function downloadAudio(url: string): Promise<Buffer> {
+export async function downloadAudio(url: string): Promise<{ buffer: Buffer; format: 'mp3' | 'webm' }> {
     if (!url || typeof url !== 'string' || url.trim() === '') {
         throw new Error('No YouTube URL provided.');
     }
@@ -131,14 +139,34 @@ export async function downloadAudio(url: string): Promise<Buffer> {
     }
 
     if (IS_SERVERLESS) {
-        // Use ytdl-core for serverless environments (Vercel, AWS Lambda, etc.)
+        // Use @distube/ytdl-core for serverless environments (Vercel, AWS Lambda, etc.)
         console.log('[ytdl-core] Downloading audio from:', normalizedUrl);
-        const ytdl = (await import('ytdl-core')).default;
+        const ytdl = (await import('@distube/ytdl-core')).default;
 
         try {
-            const audioStream = ytdl(normalizedUrl, {
-                quality: 'lowestaudio',
-                filter: 'audioonly',
+            // Get video info first to find best audio format
+            const info = await ytdl.getInfo(normalizedUrl, {
+                requestOptions: {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                    },
+                },
+            });
+
+            // Choose audio format - prefer opus/webm for smaller size
+            const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
+            const format = audioFormats.find(f => f.container === 'webm') || audioFormats[0];
+
+            console.log(`[ytdl-core] Selected format: ${format.container} (${format.audioCodec})`);
+
+            const audioStream = ytdl.downloadFromInfo(info, {
+                format: format,
+                requestOptions: {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    },
+                },
             });
 
             const chunks: Buffer[] = [];
@@ -154,7 +182,7 @@ export async function downloadAudio(url: string): Promise<Buffer> {
             }
 
             console.log(`[ytdl-core] Audio downloaded: ${(buffer.length / 1024 / 1024).toFixed(2)} MB`);
-            return buffer;
+            return { buffer, format: 'webm' };
 
         } catch (err: any) {
             console.error('[ytdl-core download failed]', {
@@ -169,8 +197,8 @@ export async function downloadAudio(url: string): Promise<Buffer> {
                 errorMessage = 'This YouTube video is unavailable or private.';
             } else if (err.message?.includes('copyright')) {
                 errorMessage = 'This video is not available due to copyright restrictions.';
-            } else if (err.statusCode === 429) {
-                errorMessage = 'Too many requests. Please try again in a few minutes.';
+            } else if (err.statusCode === 429 || err.statusCode === 410) {
+                errorMessage = 'YouTube is temporarily blocking requests. Please try again in a few minutes.';
             } else if (err.message?.includes('Sign in')) {
                 errorMessage = 'This video requires sign-in and cannot be processed.';
             }
@@ -257,7 +285,7 @@ export async function downloadAudio(url: string): Promise<Buffer> {
             const buffer = await fs.readFile(compressedPath);
             await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
-            return buffer;
+            return { buffer, format: 'mp3' };
 
         } catch (err: any) {
             await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -277,10 +305,10 @@ export async function downloadAudio(url: string): Promise<Buffer> {
  */
 export async function extractYouTubeAudio(youtubeUrl: string | null | undefined): Promise<string> {
     // Use downloadAudio and write to temp file
-    const buffer = await downloadAudio(youtubeUrl!);
+    const { buffer, format } = await downloadAudio(youtubeUrl!);
 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'speech-analyzer-'));
-    const audioPath = path.join(tempDir, 'audio.mp3');
+    const audioPath = path.join(tempDir, `audio.${format}`);
 
     try {
         // Write buffer to file

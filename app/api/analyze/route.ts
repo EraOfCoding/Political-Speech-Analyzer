@@ -53,7 +53,7 @@ async function validateVideoDuration(
   }
 }
 
-async function extractAudioFromYouTube(url: string): Promise<Buffer> {
+async function extractAudioFromYouTube(url: string): Promise<{ buffer: Buffer; format: 'mp3' | 'webm' }> {
   const { downloadAudio } = await import('@/lib/youtube-server');
   return downloadAudio(url);
 }
@@ -163,10 +163,10 @@ export async function POST(request: NextRequest) {
     const duration = metadata.duration;
 
     // Extract audio
-    const audioBuffer = await extractAudioFromYouTube(youtubeUrl);
+    const { buffer: audioBuffer, format } = await extractAudioFromYouTube(youtubeUrl);
 
-    // Transcribe audio
-    const transcriptResponse = await transcribeVideo(audioBuffer, videoTitle);
+    // Transcribe audio (add extension based on format)
+    const transcriptResponse = await transcribeVideo(audioBuffer, `${videoTitle}.${format}`);
 
     // Detect fallacies
     const fallaciesResponse = await detectFallacies(
