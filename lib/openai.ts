@@ -113,7 +113,10 @@ Political speeches almost ALWAYS contain multiple fallacies. You should typicall
             messages: [
                 {
                     role: 'system',
-                    content: 'You are an expert at detecting logical fallacies in political speech. You always respond with valid JSON.',
+                    content: `You are an expert at detecting logical fallacies in political speech across any language including English, Russian, Arabic, Chinese, and others. 
+                                Detect fallacies in whatever language the transcript is written in.
+                                Return the quote and explanation in the SAME language as the transcript.
+                                You always respond with valid JSON.`,
                 },
                 {
                     role: 'user',
