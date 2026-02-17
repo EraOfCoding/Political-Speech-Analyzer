@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { extractVideoId, normalizeYouTubeUrl } from '@/lib/youtube';
-import { transcribeVideo, detectFallacies } from '@/lib/openai';
+import { detectFallacies } from '@/lib/openai';
 import { Fallacy, YouTubeMetadata } from '@/lib/types';
 
 // Force Node.js runtime for this route
@@ -29,7 +29,7 @@ async function getYouTubeMetadata(url: string): Promise<YouTubeMetadata> {
       videoId,
       title: details.title,
       thumbnailUrl,
-      duration: parseInt(details.lengthSeconds),
+      duration: parseInt(details.lengthSeconds) || 0,
       channelName: details.author?.name,
     };
   } catch (error) {
@@ -38,24 +38,9 @@ async function getYouTubeMetadata(url: string): Promise<YouTubeMetadata> {
   }
 }
 
-async function validateVideoDuration(
-  url: string,
-  maxDurationSeconds: number = 3600
-): Promise<void> {
-  const metadata = await getYouTubeMetadata(url);
-
-  if (metadata.duration > maxDurationSeconds) {
-    const maxMinutes = Math.floor(maxDurationSeconds / 60);
-    const actualMinutes = Math.floor(metadata.duration / 60);
-    throw new Error(
-      `Video is too long (${actualMinutes} minutes). Maximum duration is ${maxMinutes} minutes.`
-    );
-  }
-}
-
-async function extractAudioFromYouTube(url: string): Promise<{ buffer: Buffer; format: 'mp3' | 'webm' }> {
-  const { downloadAudio } = await import('@/lib/youtube-server');
-  return downloadAudio(url);
+async function getYouTubeTranscriptData(url: string) {
+  const { getYouTubeTranscript } = await import('@/lib/youtube-server');
+  return getYouTubeTranscript(url);
 }
 
 // Rate limiting (simple in-memory implementation)
@@ -146,27 +131,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Validate duration (1 hour max)
-    try {
-      await validateVideoDuration(youtubeUrl, 3600);
-    } catch (error) {
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Video duration validation failed' },
-        { status: 400 }
-      );
-    }
-
     // Fetch metadata
     const metadata = await getYouTubeMetadata(youtubeUrl);
     const videoTitle = metadata.title;
     const thumbnailUrl = metadata.thumbnailUrl;
     const duration = metadata.duration;
 
-    // Extract audio
-    const { buffer: audioBuffer, format } = await extractAudioFromYouTube(youtubeUrl);
-
-    // Transcribe audio (add extension based on format)
-    const transcriptResponse = await transcribeVideo(audioBuffer, `${videoTitle}.${format}`);
+    // Get transcript from Supadata
+    const transcriptResponse = await getYouTubeTranscriptData(youtubeUrl);
 
     // Detect fallacies
     const fallaciesResponse = await detectFallacies(

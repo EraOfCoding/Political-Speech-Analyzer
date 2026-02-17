@@ -4,7 +4,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '100mb',
     },
-    serverComponentsExternalPackages: ['@distube/ytdl-core', 'undici'],
   },
 }
 

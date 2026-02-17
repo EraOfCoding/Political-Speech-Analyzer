@@ -16,13 +16,10 @@ interface AnalysisListItem {
   duration?: number;
 }
 
-type FilterType = 'all' | 'youtube' | 'upload';
-
 export default function LibraryPage() {
   const [analyses, setAnalyses] = useState<AnalysisListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filter, setFilter] = useState<FilterType>('all');
   const [total, setTotal] = useState(0);
 
   useEffect(() => {
@@ -33,10 +30,6 @@ export default function LibraryPage() {
           limit: '20',
           offset: '0',
         });
-
-        if (filter !== 'all') {
-          params.set('sourceType', filter);
-        }
 
         const response = await fetch(`/api/analyses?${params}`);
 
@@ -56,56 +49,22 @@ export default function LibraryPage() {
     }
 
     fetchAnalyses();
-  }, [filter]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="border-b bg-white shadow-sm">
         <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Analysis Library</h1>
-              <p className="text-gray-600 mt-1">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Analysis Library</h1>
+              <p className="text-sm sm:text-base text-gray-600 mt-1">
                 {total} {total === 1 ? 'analysis' : 'analyses'} saved
               </p>
             </div>
-            <Link href="/">
-              <Button>New Analysis</Button>
+            <Link href="/" className="flex-shrink-0">
+              <Button className="w-full sm:w-auto">New Analysis</Button>
             </Link>
-          </div>
-
-          {/* Filter tabs */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === 'all'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setFilter('youtube')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === 'youtube'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              YouTube
-            </button>
-            <button
-              onClick={() => setFilter('upload')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === 'upload'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Uploads
-            </button>
           </div>
         </div>
       </div>
@@ -139,9 +98,7 @@ export default function LibraryPage() {
               No analyses yet
             </h3>
             <p className="text-gray-600 mb-6">
-              {filter === 'all'
-                ? 'Start by analyzing your first video.'
-                : `No ${filter} analyses found.`}
+              Start by analyzing your first YouTube video.
             </p>
             <Link href="/">
               <Button>Analyze a Video</Button>
