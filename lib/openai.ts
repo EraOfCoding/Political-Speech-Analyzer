@@ -1,15 +1,19 @@
+import 'server-only';
 import OpenAI from 'openai';
 import { WhisperResponse, FallacyDetectionResponse } from './types';
+import { File as FormDataFile } from 'openai/uploads';
 
 const openai = new OpenAI({
-    apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY!,
-    dangerouslyAllowBrowser: true, // Only for MVP - move to server in production
+    apiKey: process.env.OPENAI_API_KEY!,
 });
 
-export async function transcribeVideo(videoFile: File): Promise<WhisperResponse> {
+export async function transcribeVideo(audioBuffer: Buffer, filename: string): Promise<WhisperResponse> {
     try {
+        // Create a File-like object from Buffer for OpenAI API
+        const file = new File([audioBuffer], filename, { type: 'audio/mpeg' }) as unknown as FormDataFile;
+
         const response = await openai.audio.transcriptions.create({
-            file: videoFile,
+            file: file,
             model: 'whisper-1',
             response_format: 'verbose_json',
             timestamp_granularities: ['word'],
@@ -26,14 +30,18 @@ export async function detectFallacies(
     transcript: string,
     words: Array<{ word: string; start: number; end: number }>
 ): Promise<FallacyDetectionResponse> {
-    const wordsWithIndex = words.map((w, idx) => ({ ...w, index: idx }));
+    // Create indexed transcript where each word has its index directly attached
+    const indexedTranscript = words.map((w, idx) => `${w.word}[${idx}]`).join(' ');
 
     const prompt = `You are a political rhetoric analyzer. Analyze this transcript for logical fallacies.
 
-CRITICAL: You must provide EXACT word indices from the list below.
+CRITICAL INSTRUCTION: Each word has its index in brackets like this: word[0] next[1] word[2]
+You MUST use these exact index numbers for start_word_index and end_word_index.
 
-Transcript with word indices:
-${wordsWithIndex.map(w => `[${w.index}] ${w.word}`).join(' ')}
+Indexed Transcript:
+${indexedTranscript}
+
+Original text for reference: ${transcript}
 
 Full text: ${transcript}
 
@@ -69,11 +77,13 @@ For each fallacy found, you MUST provide:
 6. severity: "minor", "moderate", or "severe"
 
 CRITICAL INSTRUCTION FOR INDICES:
-- Look at the indexed transcript above
-- Find the EXACT words from your quote
-- Use the [INDEX] numbers you see in brackets
-- For example: if your quote is "economy has never" and you see "[45] economy [46] has [47] never", then start_word_index=45 and end_word_index=47
-- DOUBLE CHECK that the indices match the actual words in your quote
+- Each word in the indexed transcript has its number in brackets AFTER it
+- For example: "the[5] economy[6] is[7] strong[8]"
+- If your quote is "economy is strong", then:
+  * start_word_index = 6 (the number after "economy")
+  * end_word_index = 8 (the number after "strong")
+- Copy the EXACT numbers you see in the brackets
+- DOUBLE CHECK: Your quote must match the words at those indices
 
 Return ONLY valid JSON in this exact format:
 {

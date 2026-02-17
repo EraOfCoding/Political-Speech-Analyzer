@@ -45,3 +45,31 @@ export interface FallacyDetectionResponse {
     severity: 'minor' | 'moderate' | 'severe';
   }>;
 }
+
+export type SourceType = 'youtube' | 'upload';
+
+export interface YouTubeMetadata {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string;
+  duration: number;
+  channelName?: string;
+}
+
+export interface StoredAnalysis {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceType: SourceType;
+  youtubeUrl?: string;
+  youtubeId?: string;
+  videoTitle: string;
+  thumbnailUrl?: string;
+  duration?: number;
+  transcriptText: string;
+  words: Word[];
+  language?: string;
+  fallacies: Fallacy[];
+  fallacyCount: number;
+  processingTime?: number;
+}
