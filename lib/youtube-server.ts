@@ -5,7 +5,20 @@ import os from 'node:os';
 import { Readable } from 'node:stream';
 
 // Detect if running on Vercel or other serverless environments
-const IS_SERVERLESS = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || !process.env.HOME?.includes('/Users/');
+const IS_SERVERLESS = Boolean(
+    process.env.VERCEL ||
+    process.env.VERCEL_ENV ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    process.env.LAMBDA_TASK_ROOT ||
+    process.platform === 'linux' && !process.env.HOME?.includes('/home/')
+);
+
+console.log('[Environment] Detection:', {
+    VERCEL: process.env.VERCEL,
+    VERCEL_ENV: process.env.VERCEL_ENV,
+    IS_SERVERLESS,
+    platform: process.platform,
+});
 
 if (IS_SERVERLESS) {
     console.log('[Environment] Running in serverless mode (using ytdl-core)');
@@ -144,11 +157,25 @@ export async function downloadAudio(url: string): Promise<Buffer> {
             return buffer;
 
         } catch (err: any) {
-            console.error('[ytdl-core download failed]', err);
-            throw new Error(
-                `Failed to extract audio from YouTube video. ` +
-                `The video may be age-restricted or unavailable.`
-            );
+            console.error('[ytdl-core download failed]', {
+                message: err.message,
+                statusCode: err.statusCode,
+                stack: err.stack?.split('\n')[0],
+            });
+
+            let errorMessage = 'Failed to extract audio from YouTube video.';
+
+            if (err.message?.includes('Video unavailable')) {
+                errorMessage = 'This YouTube video is unavailable or private.';
+            } else if (err.message?.includes('copyright')) {
+                errorMessage = 'This video is not available due to copyright restrictions.';
+            } else if (err.statusCode === 429) {
+                errorMessage = 'Too many requests. Please try again in a few minutes.';
+            } else if (err.message?.includes('Sign in')) {
+                errorMessage = 'This video requires sign-in and cannot be processed.';
+            }
+
+            throw new Error(errorMessage);
         }
     } else {
         // Use yt-dlp + ffmpeg for local development (better quality)
