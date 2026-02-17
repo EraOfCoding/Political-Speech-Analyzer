@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { InputSelector } from '@/components/InputSelector';
+import { YouTubeLinkInput } from '@/components/YouTubeLinkInput';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 
@@ -13,6 +13,18 @@ export default function Home() {
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState('');
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const statusTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
+
+  // Cleanup intervals and timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+      statusTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+    };
+  }, []);
 
   const handleYouTubeSubmit = async (url: string) => {
     setIsProcessing(true);
@@ -20,13 +32,38 @@ export default function Home() {
     setProgress(0);
     setStatusMessage('Fetching video metadata...');
 
+    // Smooth progress animation
+    progressIntervalRef.current = setInterval(() => {
+      setProgress((prev) => {
+        // Slow down as we approach 85%
+        if (prev < 85) {
+          return prev + Math.random() * 2 + 0.5; // Faster at start
+        } else if (prev < 90) {
+          return prev + Math.random() * 0.5; // Slower near end
+        }
+        return prev; // Stop at 90%
+      });
+    }, 300);
+
     try {
       const formData = new FormData();
       formData.append('sourceType', 'youtube');
       formData.append('youtubeUrl', url);
 
-      setProgress(10);
-      setStatusMessage('Analyzing video...');
+      // Clear any existing timeouts
+      statusTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      statusTimeoutsRef.current = [];
+
+      // Update status messages based on progress
+      statusTimeoutsRef.current.push(
+        setTimeout(() => setStatusMessage('Downloading audio...'), 2000)
+      );
+      statusTimeoutsRef.current.push(
+        setTimeout(() => setStatusMessage('Transcribing speech...'), 8000)
+      );
+      statusTimeoutsRef.current.push(
+        setTimeout(() => setStatusMessage('Analyzing for fallacies...'), 20000)
+      );
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -34,12 +71,17 @@ export default function Home() {
       });
 
       if (!response.ok) {
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to analyze video');
       }
 
-      setProgress(90);
       const data = await response.json();
+
+      // Jump to completion
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      statusTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      statusTimeoutsRef.current = [];
 
       setProgress(100);
       setStatusMessage('Analysis complete!');
@@ -49,48 +91,10 @@ export default function Home() {
         router.push(`/analysis/${data.id}`);
       }, 500);
     } catch (err) {
-      console.error('Analysis error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred during analysis');
-      setIsProcessing(false);
-      setProgress(0);
-    }
-  };
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      statusTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      statusTimeoutsRef.current = [];
 
-  const handleFileSelect = async (file: File) => {
-    setIsProcessing(true);
-    setError('');
-    setProgress(0);
-    setStatusMessage('Uploading file...');
-
-    try {
-      const formData = new FormData();
-      formData.append('sourceType', 'upload');
-      formData.append('file', file);
-
-      setProgress(10);
-      setStatusMessage('Analyzing video...');
-
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze video');
-      }
-
-      setProgress(90);
-      const data = await response.json();
-
-      setProgress(100);
-      setStatusMessage('Analysis complete!');
-
-      // Navigate to analysis page
-      setTimeout(() => {
-        router.push(`/analysis/${data.id}`);
-      }, 500);
-    } catch (err) {
       console.error('Analysis error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred during analysis');
       setIsProcessing(false);
@@ -106,7 +110,7 @@ export default function Home() {
             Political Speech Analyzer
           </h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Paste a YouTube link or upload a video to detect logical fallacies in political speeches
+            Paste a YouTube link to detect logical fallacies in political speeches
           </p>
           <div className="mt-4">
             <Link href="/library">
@@ -116,9 +120,8 @@ export default function Home() {
         </div>
 
         {!isProcessing ? (
-          <InputSelector
-            onYouTubeSubmit={handleYouTubeSubmit}
-            onFileSelect={handleFileSelect}
+          <YouTubeLinkInput
+            onSubmit={handleYouTubeSubmit}
             isProcessing={isProcessing}
           />
         ) : (
@@ -149,7 +152,7 @@ export default function Home() {
               <Progress value={progress} className="w-full" />
 
               <div className="text-center text-sm text-gray-500">
-                {progress}% complete
+                {Math.round(progress)}% complete
               </div>
             </div>
           </div>
@@ -167,9 +170,9 @@ export default function Home() {
             <div className="grid md:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-lg shadow-sm">
                 <div className="text-3xl font-bold text-blue-600 mb-3">1</div>
-                <h3 className="text-lg font-semibold mb-2">Provide Video</h3>
+                <h3 className="text-lg font-semibold mb-2">Paste YouTube URL</h3>
                 <p className="text-gray-600">
-                  Paste a YouTube URL or upload your own video file
+                  Enter the link to any YouTube video containing a political speech
                 </p>
               </div>
               <div className="bg-white p-6 rounded-lg shadow-sm">

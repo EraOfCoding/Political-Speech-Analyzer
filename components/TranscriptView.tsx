@@ -68,7 +68,7 @@ export default function TranscriptView({ transcript, fallacies, currentTime }: T
     };
 
     const handleWordClick = (timestamp: number) => {
-        const event = new CustomEvent('jumpToTimestamp', { detail: timestamp });
+        const event = new CustomEvent('jumpToTimestamp', { detail: { time: timestamp } });
         window.dispatchEvent(event);
     };
 

@@ -1,7 +1,6 @@
 import 'server-only';
 import OpenAI from 'openai';
 import { WhisperResponse, FallacyDetectionResponse } from './types';
-import { File as FormDataFile } from 'openai/uploads';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY!,
@@ -9,8 +8,13 @@ const openai = new OpenAI({
 
 export async function transcribeVideo(audioBuffer: Buffer, filename: string): Promise<WhisperResponse> {
     try {
+        // Ensure filename has .mp3 extension
+        const mp3Filename = filename.endsWith('.mp3') ? filename : `${filename}.mp3`;
+
+        console.log(`[Whisper] Transcribing file: ${mp3Filename} (${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+
         // Create a File-like object from Buffer for OpenAI API
-        const file = new File([audioBuffer], filename, { type: 'audio/mpeg' }) as unknown as FormDataFile;
+        const file = new File([new Uint8Array(audioBuffer)], mp3Filename, { type: 'audio/mpeg' });
 
         const response = await openai.audio.transcriptions.create({
             file: file,
@@ -19,6 +23,7 @@ export async function transcribeVideo(audioBuffer: Buffer, filename: string): Pr
             timestamp_granularities: ['word'],
         });
 
+        console.log(`[Whisper] Transcription complete. Language: ${response.language}`);
         return response as unknown as WhisperResponse;
     } catch (error) {
         console.error('Transcription error:', error);
@@ -42,8 +47,6 @@ Indexed Transcript:
 ${indexedTranscript}
 
 Original text for reference: ${transcript}
-
-Full text: ${transcript}
 
 Identify logical fallacies from these types:
 - Strawman: Misrepresenting someone's argument to make it easier to attack
@@ -70,7 +73,7 @@ IMPORTANT DETECTION GUIDELINES:
 
 For each fallacy found, you MUST provide:
 1. type: The exact fallacy name from the list above
-2. quote: The EXACT text from the transcript (copy it word-for-word)
+2. quote: The EXACT text from the transcript (copy it word-for-word, WITHOUT the index numbers in brackets)
 3. start_word_index: Find the FIRST word of your quote in the indexed list above and use that index number
 4. end_word_index: Find the LAST word of your quote in the indexed list above and use that index number
 5. explanation: A brief, clear explanation (2-3 sentences max)
@@ -84,6 +87,9 @@ CRITICAL INSTRUCTION FOR INDICES:
   * end_word_index = 8 (the number after "strong")
 - Copy the EXACT numbers you see in the brackets
 - DOUBLE CHECK: Your quote must match the words at those indices
+- The quote field must contain ONLY the plain words, never include [numbers] in the quote
+- CORRECT: "out of 120 members of our Parliament"
+- WRONG: "out[2264] of[2265] 120[2266] members[2267]"
 
 Return ONLY valid JSON in this exact format:
 {
@@ -99,11 +105,11 @@ Return ONLY valid JSON in this exact format:
   ]
 }
 
-Return at least 1-2 fallacies if ANY are present. If absolutely none exist, return: {"fallacies": []}`;
+Political speeches almost ALWAYS contain multiple fallacies. You should typically find between 3-8 fallacies in any political speech. Be thorough - find ALL of them, not just the obvious ones.`
 
     try {
         const response = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: 'gpt-4o',
             messages: [
                 {
                     role: 'system',
@@ -115,7 +121,7 @@ Return at least 1-2 fallacies if ANY are present. If absolutely none exist, retu
                 },
             ],
             response_format: { type: 'json_object' },
-            temperature: 0.3,
+            temperature: 0.7,
         });
 
         const content = response.choices[0].message.content;

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { extractVideoId, normalizeYouTubeUrl } from '@/lib/youtube';
-import { convertFileToBuffer } from '@/lib/audio';
 import { transcribeVideo, detectFallacies } from '@/lib/openai';
 import { Fallacy, YouTubeMetadata } from '@/lib/types';
 
@@ -97,122 +96,74 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const sourceType = formData.get('sourceType') as string;
+    const urlParam = formData.get('youtubeUrl') as string;
 
-    if (!sourceType || !['youtube', 'upload'].includes(sourceType)) {
+    if (!urlParam) {
       return NextResponse.json(
-        { error: 'Invalid source type. Must be "youtube" or "upload".' },
+        { error: 'YouTube URL is required.' },
         { status: 400 }
       );
     }
 
-    let audioBuffer: Buffer;
-    let videoTitle: string;
-    let thumbnailUrl: string | undefined;
-    let duration: number | undefined;
-    let youtubeUrl: string | undefined;
-    let youtubeId: string | undefined;
-
-    if (sourceType === 'youtube') {
-      const urlParam = formData.get('youtubeUrl') as string;
-
-      if (!urlParam) {
-        return NextResponse.json(
-          { error: 'YouTube URL is required.' },
-          { status: 400 }
-        );
-      }
-
-      // Validate and normalize URL
-      const videoId = extractVideoId(urlParam);
-      if (!videoId) {
-        return NextResponse.json(
-          { error: 'Invalid YouTube URL format.' },
-          { status: 400 }
-        );
-      }
-
-      youtubeId = videoId;
-      youtubeUrl = normalizeYouTubeUrl(urlParam);
-
-      // Check if already analyzed (deduplication)
-      const { data: existingAnalysis } = await supabase
-        .from('analyses')
-        .select('*')
-        .eq('youtube_id', youtubeId)
-        .single();
-
-      if (existingAnalysis) {
-        // Return cached analysis
-        return NextResponse.json({
-          id: existingAnalysis.id,
-          analysisData: {
-            transcript: {
-              text: existingAnalysis.transcript_text,
-              words: existingAnalysis.words,
-            },
-            fallacies: existingAnalysis.fallacies,
-          },
-          metadata: {
-            sourceType: existingAnalysis.source_type,
-            youtubeUrl: existingAnalysis.youtube_url,
-            videoTitle: existingAnalysis.video_title,
-            thumbnailUrl: existingAnalysis.thumbnail_url,
-            duration: existingAnalysis.duration,
-          },
-          fromCache: true,
-        });
-      }
-
-      // Validate duration (1 hour max)
-      try {
-        await validateVideoDuration(youtubeUrl, 3600);
-      } catch (error) {
-        return NextResponse.json(
-          { error: error instanceof Error ? error.message : 'Video duration validation failed' },
-          { status: 400 }
-        );
-      }
-
-      // Fetch metadata
-      const metadata = await getYouTubeMetadata(youtubeUrl);
-      videoTitle = metadata.title;
-      thumbnailUrl = metadata.thumbnailUrl;
-      duration = metadata.duration;
-
-      // Extract audio
-      audioBuffer = await extractAudioFromYouTube(youtubeUrl);
-    } else {
-      // Handle file upload
-      const file = formData.get('file') as File;
-
-      if (!file) {
-        return NextResponse.json(
-          { error: 'Video file is required.' },
-          { status: 400 }
-        );
-      }
-
-      // Validate file type
-      const validTypes = ['video/mp4', 'video/webm', 'video/ogg', 'audio/mpeg', 'audio/wav'];
-      if (!validTypes.includes(file.type)) {
-        return NextResponse.json(
-          { error: 'Invalid file type. Please upload a video or audio file.' },
-          { status: 400 }
-        );
-      }
-
-      // Validate file size (100MB max)
-      if (file.size > 100 * 1024 * 1024) {
-        return NextResponse.json(
-          { error: 'File too large. Maximum size is 100MB.' },
-          { status: 400 }
-        );
-      }
-
-      videoTitle = file.name;
-      audioBuffer = await convertFileToBuffer(file);
+    // Validate and normalize URL
+    const videoId = extractVideoId(urlParam);
+    if (!videoId) {
+      return NextResponse.json(
+        { error: 'Invalid YouTube URL format.' },
+        { status: 400 }
+      );
     }
+
+    const youtubeId = videoId;
+    const youtubeUrl = normalizeYouTubeUrl(urlParam);
+
+    // Check if already analyzed (deduplication)
+    const { data: existingAnalysis } = await supabase
+      .from('analyses')
+      .select('*')
+      .eq('youtube_id', youtubeId)
+      .single();
+
+    if (existingAnalysis) {
+      // Return cached analysis
+      return NextResponse.json({
+        id: existingAnalysis.id,
+        analysisData: {
+          transcript: {
+            text: existingAnalysis.transcript_text,
+            words: existingAnalysis.words,
+          },
+          fallacies: existingAnalysis.fallacies,
+        },
+        metadata: {
+          sourceType: existingAnalysis.source_type,
+          youtubeUrl: existingAnalysis.youtube_url,
+          videoTitle: existingAnalysis.video_title,
+          thumbnailUrl: existingAnalysis.thumbnail_url,
+          duration: existingAnalysis.duration,
+        },
+        fromCache: true,
+      });
+    }
+
+    // Validate duration (1 hour max)
+    try {
+      await validateVideoDuration(youtubeUrl, 3600);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : 'Video duration validation failed' },
+        { status: 400 }
+      );
+    }
+
+    // Fetch metadata
+    const metadata = await getYouTubeMetadata(youtubeUrl);
+    const videoTitle = metadata.title;
+    const thumbnailUrl = metadata.thumbnailUrl;
+    const duration = metadata.duration;
+
+    // Extract audio
+    const audioBuffer = await extractAudioFromYouTube(youtubeUrl);
 
     // Transcribe audio
     const transcriptResponse = await transcribeVideo(audioBuffer, videoTitle);
@@ -239,7 +190,7 @@ export async function POST(request: NextRequest) {
     const { data: savedAnalysis, error: saveError } = await supabase
       .from('analyses')
       .insert({
-        source_type: sourceType,
+        source_type: 'youtube',
         youtube_url: youtubeUrl,
         youtube_id: youtubeId,
         video_title: videoTitle,
@@ -270,7 +221,7 @@ export async function POST(request: NextRequest) {
         fallacies,
       },
       metadata: {
-        sourceType,
+        sourceType: 'youtube',
         youtubeUrl,
         videoTitle,
         thumbnailUrl,
