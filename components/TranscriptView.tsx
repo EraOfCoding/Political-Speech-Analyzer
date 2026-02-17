@@ -149,12 +149,8 @@ export default function TranscriptView({ transcript, fallacies, currentTime }: T
 
                     <div className="mt-4 flex items-center gap-6 text-sm text-gray-600">
                         <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 bg-blue-100 border-b-2 border-blue-500 rounded"></div>
+                            <div className="w-4 h-4 bg-red-100 border-b-2 border-red-500 rounded"></div>
                             <span>Logical Fallacy</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 bg-yellow-200 rounded"></div>
-                            <span>Currently Playing</span>
                         </div>
                         <div className="text-xs text-gray-500">
                             💡 Click any word to jump to that moment
